@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SponsorLock – Prototipo segmento non‑skippabile</title>
+  <style>
+    :root{
+      --bg:#0b1020; --card:#121935; --ink:#e9ecff; --muted:#9aa3c7; --brand:#6c8cff; --accent:#8ef0c0; --warn:#ffd166; --danger:#ff6b6b;
+      --radius:18px;
+    }
+    html,body{height:100%;}
+    body{margin:0; font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu; background:linear-gradient(180deg,#0b1020 0%, #0e1430 100%); color:var(--ink);}
+    .wrap{max-width:1100px; margin:24px auto; padding:0 16px;}
+    h1{font-size:24px; margin:0 0 12px; letter-spacing:.2px}
+    .sub{color:var(--muted); font-size:14px; margin-bottom:16px}
+
+    .grid{display:grid; gap:16px; grid-template-columns: 1.2fr .8fr; align-items:start}
+    @media (max-width:920px){ .grid{grid-template-columns:1fr} }
+
+    .card{background:var(--card); border-radius:var(--radius); box-shadow:0 10px 30px rgba(0,0,0,.25); overflow:hidden; border:1px solid rgba(255,255,255,.06)}
+    .card-head{display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.06)}
+    .card-head h2{font-size:15px; margin:0; font-weight:600; letter-spacing:.3px}
+    .card-body{padding:12px}
+
+    button, input, select{font:inherit; color:inherit}
+    .btn{display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:#1a2250; cursor:pointer; transition:.15s transform ease, .2s background ease}
+    .btn:hover{background:#202a65}
+    .btn:active{transform:translateY(1px)}
+    .btn.ghost{background:transparent}
+    .btn.success{background:#173c2d; border-color:#265846}
+    .btn.warn{background:#3a2a00; border-color:#5b4300}
+
+    .controls{display:flex; flex-wrap:wrap; gap:10px}
+
+    .kv{display:grid; grid-template-columns: 1fr 1fr; gap:10px;}
+    .field{display:flex; flex-direction:column; gap:6px}
+    .field label{font-size:12px; color:var(--muted)}
+    .field input[type="number"], .field input[type="text"]{background:#0f1530; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:10px}
+
+    /* Video area */
+    .stage{position:relative; background:black; min-height:300px}
+    video{width:100%; height:auto; display:block; background:#000}
+
+    /* Sponsor overlay */
+    .overlay{position:absolute; inset:0; display:none; place-items:center; background:linear-gradient(180deg, rgba(8,10,20,.35), rgba(8,10,20,.7)); backdrop-filter: blur(2px);}
+    .overlay.show{display:grid}
+    .panel{width:min(680px, 92%); border-radius:16px; border:1px solid rgba(255,255,255,.08); background:rgba(10,14,34,.85); box-shadow:0 12px 30px rgba(0,0,0,.45);}
+    .panel .row{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px}
+    .badge{display:inline-flex; align-items:center; gap:8px; background:#182152; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.08); font-size:12px}
+    .count{font-variant-numeric: tabular-nums; font-size:22px; font-weight:700}
+    .hint{color:var(--muted); font-size:12px}
+    .progress{height:8px; border-radius:999px; background:#0c1130; overflow:hidden; border:1px solid rgba(255,255,255,.08);}
+    .progress > i{display:block; height:100%; width:0%; background:linear-gradient(90deg, var(--brand), var(--accent));}
+
+    .flex{display:flex; align-items:center; gap:10px}
+
+    .logs{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size:12px; background:#0f1530; border-radius:12px; padding:10px; height:220px; overflow:auto; border:1px solid rgba(255,255,255,.08)}
+    .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#0f1530; border:1px solid rgba(255,255,255,.08); border-radius:999px}
+    .ok{color:#6af0b0}
+    .no{color:#ff9c9c}
+    .sep{height:1px; background:rgba(255,255,255,.06); margin:8px 0}
+
+    .caps{font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>👉 SponsorLock – segmento sponsorizzato non‑skippabile</h1>
+    <p class="sub">Prototipo dimostrativo: il creator seleziona un intervallo del proprio video in cui il <em>seek</em> è bloccato finché non è guardato (o finché scatta un soft‑gate). Include cap velocità, pausa se finestra non visibile e certificazione di completamento.</p>
+
+    <div class="grid">
+      <!-- PLAYER CARD -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Player di demo</h2>
+          <div class="controls">
+            <button id="btnSample" class="btn">Carica video demo</button>
+            <label class="btn ghost" for="fileInput">Carica file…<input id="fileInput" type="file" accept="video/*" hidden></label>
+          </div>
+        </div>
+        <div class="stage">
+          <video id="video" preload="metadata" playsinline crossorigin="anonymous"></video>
+
+          <!-- Sponsor Overlay -->
+          <div id="overlay" class="overlay" aria-live="polite" aria-atomic="true">
+            <div class="panel">
+              <div class="row">
+                <span class="badge">💼 Contenuto sponsorizzato</span>
+                <div class="flex">
+                  <span class="hint">Tempo rimanente</span>
+                  <span id="remain" class="count">00.0s</span>
+                </div>
+              </div>
+              <div class="row" style="gap:16px; align-items:stretch">
+                <div class="progress" style="flex:1"><i id="bar"></i></div>
+                <button id="btnContinue" class="btn success" disabled>Continua ⏩</button>
+              </div>
+              <div class="row" style="justify-content:flex-start">
+                <span id="uxMsg" class="hint">La velocità è limitata a 1× e il seek è disabilitato durante questo segmento.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="controls" style="justify-content:space-between; align-items:end">
+            <div class="kv">
+              <div class="field">
+                <label>Inizio segmento (secondi)</label>
+                <input id="segStart" type="number" step="0.1" min="0" value="5">
+              </div>
+              <div class="field">
+                <label>Fine segmento (secondi)</label>
+                <input id="segEnd" type="number" step="0.1" min="0" value="20">
+              </div>
+            </div>
+            <div class="controls">
+              <button id="btnApply" class="btn">Applica</button>
+              <button id="btnMarkHere" class="btn warn" title="Imposta dalla posizione corrente">Segna da qui (+15s)</button>
+            </div>
+          </div>
+          <div class="sep"></div>
+          <div class="controls" style="flex-wrap:wrap">
+            <span class="pill">🔒 Seek <b id="seekState">attivo</b></span>
+            <span class="pill">🏎️ Velocità <b id="rateState">libera</b></span>
+            <span class="pill">👁️ Visibilità <b id="visState">ok</b></span>
+            <span class="pill">✅ Completamento <b id="doneState">—</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- METRICS / LOGS -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Certificazione & log</h2>
+          <div class="controls">
+            <button id="btnClearLog" class="btn ghost">Pulisci</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="field">
+            <label class="caps">Token di sblocco (demo)</label>
+            <input id="unlockToken" type="text" readonly value="—" />
+          </div>
+          <div class="sep"></div>
+          <div id="logs" class="logs" aria-live="polite"></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="sub">Nota: questo è un prototipo concettuale. L’integrazione su piattaforme terze (es. YouTube) richiede il loro supporto e il rispetto dei rispettivi Termini.</p>
+  </div>
+
+  <script>
+    (function(){
+      const video = document.getElementById('video');
+      const btnSample = document.getElementById('btnSample');
+      const fileInput = document.getElementById('fileInput');
+      const btnApply = document.getElementById('btnApply');
+      const btnMarkHere = document.getElementById('btnMarkHere');
+      const overlay = document.getElementById('overlay');
+      const remain = document.getElementById('remain');
+      const bar = document.getElementById('bar');
+      const btnContinue = document.getElementById('btnContinue');
+      const uxMsg = document.getElementById('uxMsg');
+      const logs = document.getElementById('logs');
+      const btnClearLog = document.getElementById('btnClearLog');
+      const unlockToken = document.getElementById('unlockToken');
+
+      const seekState = document.getElementById('seekState');
+      const rateState = document.getElementById('rateState');
+      const visState = document.getElementById('visState');
+      const doneState = document.getElementById('doneState');
+
+      const segStart = document.getElementById('segStart');
+      const segEnd = document.getElementById('segEnd');
+
+      // --- POLICY (versione "meno fiscale") ---
+      const HARD_LOCK = true;      // Non si può saltare il segmento con seek
+      const CAP_SPEED = false;     // Nessun blocco velocità: 0.5x..2x ok
+      const epsilon = 0.01;        // Offset anti-loop per seek
+
+      let sponsor = {start:5, end:20, complete:false};
+      let inSponsor = false;
+      let lastTime = 0;            // ultimo tempo riprodotto
+
+      const fmt = (s)=> (s<0?0:s).toFixed(1)+"s";
+      const clamp = (n,min,max)=> Math.max(min, Math.min(max,n));
+
+      function log(msg){
+        const t = new Date().toLocaleTimeString();
+        const p = document.createElement('div');
+        p.textContent = `[${t}] ${msg}`;
+        logs.appendChild(p); logs.scrollTop = logs.scrollHeight;
+      }
+
+      function loadSample(){
+        video.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+        video.controls = true;
+        video.play().catch(()=>{/* autoplay may be blocked */});
+        log('Video demo caricato.');
+      }
+
+      function applySegment(){
+        sponsor.start = Math.max(0, Number(segStart.value||0));
+        sponsor.end = Math.max(sponsor.start + 0.1, Number(segEnd.value||0));
+        sponsor.complete = false;
+        updateDone(false);
+        updateBadges();
+        updateProgressUI();
+        log(`Segmento impostato: ${sponsor.start.toFixed(1)}s → ${sponsor.end.toFixed(1)}s`);
+      }
+
+      function updateBadges(){
+        seekState.textContent = inSponsor ? 'bloccato' : 'attivo';
+        rateState.textContent = CAP_SPEED ? (inSponsor ? 'limitata' : 'limitata') : 'libera';
+        visState.textContent = 'ok';
+        if (!CAP_SPEED){
+          uxMsg.textContent = 'Seek disabilitato nel segmento. Velocità libera.';
+          btnContinue.style.display = 'none';
+        }
+      }
+
+      function markFromHere(){
+        const here = video.currentTime || 0;
+        segStart.value = here.toFixed(1);
+        segEnd.value = (here + 15).toFixed(1);
+        applySegment();
+      }
+
+      function enterSponsor(){
+        if (sponsor.complete || inSponsor) return;
+        inSponsor = true;
+        video.controls = false; // evita scrub nativo
+        if (CAP_SPEED){ video.playbackRate = 1; }
+        overlay.classList.add('show');
+        log('Ingresso nel segmento sponsorizzato. Seek disabilitato.');
+        updateBadges();
+        updateProgressUI();
+      }
+
+      function leaveSponsor(){
+        if (!inSponsor) return;
+        inSponsor = false;
+        video.controls = true;
+        overlay.classList.remove('show');
+        updateBadges();
+        log('Uscita dal segmento sponsorizzato. Seek riabilitato.');
+      }
+
+      function updateProgressUI(){
+        const dur = (sponsor.end - sponsor.start);
+        const t = video.currentTime || 0;
+        const playedInSeg = clamp(t - sponsor.start, 0, dur);
+        const remainSec = dur - playedInSeg;
+        remain.textContent = fmt(remainSec);
+        const pct = dur > 0 ? (playedInSeg / dur) * 100 : 0;
+        bar.style.width = pct.toFixed(1) + '%';
+      }
+
+      function updateDone(done){
+        doneState.textContent = done ? 'completato' : '—';
+        doneState.className = done ? 'ok' : '';
+      }
+
+      function certifyAndUnlock(mode){
+        sponsor.complete = true; updateDone(true);
+        const payload = {
+          iss: 'SponsorLock-demo',
+          iat: Date.now(),
+          mode,
+          segment: {start: sponsor.start, end: sponsor.end}
+        };
+        const token = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+        unlockToken.value = token;
+        log(`Sblocco emesso (${mode}). Token aggiornato.`);
+      }
+
+      // EVENT LISTENERS
+      btnSample.addEventListener('click', loadSample);
+      fileInput.addEventListener('change', (e)=>{
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        video.src = URL.createObjectURL(f);
+        video.controls = true; log(`File caricato: ${f.name}`);
+      });
+
+      btnApply.addEventListener('click', applySegment);
+      btnMarkHere.addEventListener('click', markFromHere);
+
+      btnClearLog.addEventListener('click', ()=>{ logs.textContent=''; });
+
+      // Aggiorna progress UI regolarmente
+      setInterval(updateProgressUI, 200);
+
+      // Gestione ingresso/uscita dal segmento
+      video.addEventListener('timeupdate', ()=>{
+        const t = video.currentTime;
+        if (!sponsor.complete && t >= sponsor.start && t < sponsor.end){
+          enterSponsor();
+        } else if (inSponsor && (t < sponsor.start)){
+          leaveSponsor();
+        }
+
+        // Fine del segmento raggiunta giocando normalmente
+        if (inSponsor && t >= sponsor.end){
+          certifyAndUnlock('elapsed');
+          leaveSponsor();
+        }
+
+        lastTime = t;
+        updateProgressUI();
+      });
+
+      // Enforce speed solo se richiesto
+      video.addEventListener('ratechange', ()=>{
+        if (CAP_SPEED && inSponsor && Math.abs(video.playbackRate - 1) > 0.01){
+          video.playbackRate = 1;
+          log('Velocità bloccata a 1× durante il segmento.');
+        }
+      });
+
+      // Prevenzione seek: prima del segmento e durante il segmento
+      video.addEventListener('seeking', ()=>{
+        const t = video.currentTime; // tempo richiesto dal browser
+        if (sponsor.complete) { lastTime = t; return; }
+
+        // 1) Prima del segmento: blocca qualsiasi salto a >= start
+        if (!inSponsor && lastTime < sponsor.start && t >= sponsor.start){
+          video.currentTime = Math.max(0, sponsor.start - epsilon);
+          log('Seek oltre il limite prima del segmento → tornato all\'inizio del segmento.');
+          return;
+        }
+
+        // 2) Durante il segmento: consenti solo rewind (indietro)
+        if (inSponsor){
+          if (t > lastTime){
+            video.currentTime = lastTime; // niente fast-forward
+            log('Avanzamento bloccato dentro il segmento.');
+            return;
+          }
+        }
+
+        lastTime = video.currentTime;
+      });
+
+      // Blocca scorciatoie tastiera comuni per il seek quando nel segmento
+      window.addEventListener('keydown', (e)=>{
+        if (!inSponsor || sponsor.complete) return;
+        const keys = ['ArrowRight','l','L','.']; // avanti/skip comuni
+        if (keys.includes(e.key)){
+          e.preventDefault();
+          log('Shortcut di avanzamento bloccata.');
+        }
+      }, {capture:true});
+
+      video.addEventListener('play', ()=>{ lastTime = video.currentTime; });
+      video.addEventListener('pause', ()=>{ lastTime = video.currentTime; });
+
+      // Init
+      applySegment();
+    })();
+  </script>
+</body>
+</html>
